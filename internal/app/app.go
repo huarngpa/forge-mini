@@ -2,10 +2,13 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"forge-mini/internal/incidents"
+	"forge-mini/internal/orchestration"
 	"forge-mini/internal/policy"
 	"forge-mini/internal/projections"
 	"forge-mini/internal/signals"
@@ -16,13 +19,30 @@ import (
 )
 
 type Container struct {
-	Memory      *store.Memory
-	Engine      workflow.TransitionEngine
-	Service     *Service
-	Triage      *triage.Service
+	Memory  *store.Memory
+	Engine  workflow.TransitionEngine
+	Runtime orchestration.Runtime
+	Service *Service
+	Triage  *triage.Service
 }
 
 func New() *Container {
+	container, err := NewWithRuntime(orchestration.RuntimeInProcess)
+	if err != nil {
+		panic(err)
+	}
+	return container
+}
+
+func NewFromEnv() (*Container, error) {
+	name := orchestration.RuntimeName(os.Getenv("FORGE_RUNTIME"))
+	if name == "" {
+		name = orchestration.RuntimeInProcess
+	}
+	return NewWithRuntime(name)
+}
+
+func NewWithRuntime(name orchestration.RuntimeName) (*Container, error) {
 	mem := store.NewMemory()
 	engine := workflow.NewEngine(policy.DefaultRetryPolicy{})
 	svc := &Service{
@@ -31,30 +51,28 @@ func New() *Container {
 		now:    time.Now,
 	}
 	triageSvc := triage.New(mem, mem)
+	var runtime orchestration.Runtime
+	switch name {
+	case orchestration.RuntimeInProcess:
+		runtime = svc
+	case orchestration.RuntimeTemporal:
+		return nil, errors.New("temporal runtime is not wired yet")
+	default:
+		return nil, fmt.Errorf("unsupported runtime %q", name)
+	}
 	return &Container{
 		Memory:  mem,
 		Engine:  engine,
+		Runtime: runtime,
 		Service: svc,
 		Triage:  triageSvc,
-	}
+	}, nil
 }
 
 type Service struct {
 	memory *store.Memory
 	engine workflow.TransitionEngine
 	now    func() time.Time
-}
-
-type ScenarioRunResult struct {
-	Scenario      string                  `json:"scenario"`
-	UnitID        string                  `json:"unit_id"`
-	Steps         []ScenarioStepResult    `json:"steps"`
-	FinalWorkflow workflow.UnitWorkflow   `json:"final_workflow"`
-}
-
-type ScenarioStepResult struct {
-	Name   string                `json:"name"`
-	Result workflow.HandleResult `json:"result"`
 }
 
 func (s *Service) HandleSignal(ctx context.Context, signal signals.OperationalSignal) (workflow.HandleResult, error) {
@@ -105,14 +123,14 @@ func (s *Service) HandleTimer(ctx context.Context, timer workflow.TimerPayload) 
 	return s.commitTransition(ctx, timer.UnitID, result)
 }
 
-func (s *Service) RunScenario(ctx context.Context, name, unitID string) (ScenarioRunResult, error) {
+func (s *Service) RunScenario(ctx context.Context, name, unitID string) (orchestration.ScenarioRunResult, error) {
 	base := s.now()
 	steps, err := sim.BuildScenario(name, unitID, base)
 	if err != nil {
-		return ScenarioRunResult{}, err
+		return orchestration.ScenarioRunResult{}, err
 	}
 
-	results := make([]ScenarioStepResult, 0, len(steps))
+	results := make([]orchestration.ScenarioStepResult, 0, len(steps))
 	for _, step := range steps {
 		var handleResult workflow.HandleResult
 		switch {
@@ -124,9 +142,9 @@ func (s *Service) RunScenario(ctx context.Context, name, unitID string) (Scenari
 			continue
 		}
 		if err != nil {
-			return ScenarioRunResult{}, fmt.Errorf("run step %q: %w", step.Name, err)
+			return orchestration.ScenarioRunResult{}, fmt.Errorf("run step %q: %w", step.Name, err)
 		}
-		results = append(results, ScenarioStepResult{
+		results = append(results, orchestration.ScenarioStepResult{
 			Name:   step.Name,
 			Result: handleResult,
 		})
@@ -134,10 +152,10 @@ func (s *Service) RunScenario(ctx context.Context, name, unitID string) (Scenari
 
 	finalWorkflow, err := s.memory.GetWorkflow(ctx, unitID)
 	if err != nil {
-		return ScenarioRunResult{}, err
+		return orchestration.ScenarioRunResult{}, err
 	}
 
-	return ScenarioRunResult{
+	return orchestration.ScenarioRunResult{
 		Scenario:      name,
 		UnitID:        unitID,
 		Steps:         results,

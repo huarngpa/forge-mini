@@ -9,7 +9,10 @@ import (
 )
 
 func main() {
-	container := app.New()
+	container, err := app.NewFromEnv()
+	if err != nil {
+		log.Fatal(err)
+	}
 	server := httpapi.NewServer(container)
 
 	log.Println("forge-mini listening on :8080")

@@ -38,6 +38,14 @@ go run ./cmd/server
 
 The server listens on `:8080`.
 
+Select the orchestration runtime with `FORGE_RUNTIME`.
+
+```bash
+FORGE_RUNTIME=inprocess go run ./cmd/server
+```
+
+`inprocess` is the current default. `temporal` is reserved for the upcoming Temporal-backed runtime.
+
 ## Run Tests
 
 If your environment blocks the default Go cache path, use sandbox-safe paths:

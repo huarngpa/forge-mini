@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"forge-mini/internal/app"
-	"forge-mini/internal/sim"
 	"forge-mini/internal/signals"
+	"forge-mini/internal/sim"
 	"forge-mini/internal/store"
 	"forge-mini/internal/workflow"
 )
@@ -44,7 +44,7 @@ func (s *Server) handleSignal(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	result, err := s.container.Service.HandleSignal(r.Context(), signal)
+	result, err := s.container.Runtime.HandleSignal(r.Context(), signal)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -58,7 +58,7 @@ func (s *Server) handleTimer(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	result, err := s.container.Service.HandleTimer(r.Context(), timer)
+	result, err := s.container.Runtime.HandleTimer(r.Context(), timer)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -107,8 +107,8 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request, unitID s
 	decisions, _ := s.container.Memory.ListDecisionsByWorkflow(r.Context(), wf.WorkflowID)
 	triage, _ := s.container.Triage.SummarizeUnit(r.Context(), unitID)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"signals":                signalsList,
-		"decisions":              decisions,
+		"signals":               signalsList,
+		"decisions":             decisions,
 		"triage_recommendation": triage,
 	})
 }
@@ -171,7 +171,7 @@ func (s *Server) handleScenarioRun(w http.ResponseWriter, r *http.Request) {
 	if unitID == "" {
 		unitID = fmt.Sprintf("%s-%d", name, time.Now().UnixNano())
 	}
-	result, err := s.container.Service.RunScenario(r.Context(), name, unitID)
+	result, err := s.container.Runtime.RunScenario(r.Context(), name, unitID)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
