@@ -57,6 +57,19 @@ func (e *Engine) ApplySignal(wf UnitWorkflow, signal signals.OperationalSignal, 
 				StationID: signal.StationID,
 				FireAt:    now.Add(30 * time.Second),
 			})
+		case StateReadyForInspection:
+			if signal.StationID != "inspection" {
+				return reject(wf, signal, now, "unexpected_station_for_state"), nil
+			}
+			next.State = StateInInspection
+			next.CurrentStationID = signal.StationID
+			result.Decisions = append(result.Decisions, transitionDecision(next, StateInInspection, now))
+			result.TimersToStart = append(result.TimersToStart, TimerRequest{
+				Key:       timerKey(signal.UnitID, TimerHeartbeatTimeout, signal.StationID),
+				TimerType: TimerHeartbeatTimeout,
+				StationID: signal.StationID,
+				FireAt:    now.Add(30 * time.Second),
+			})
 		default:
 			return reject(wf, signal, now, "unexpected_signal_for_state"), nil
 		}
@@ -106,8 +119,14 @@ func (e *Engine) ApplySignal(wf UnitWorkflow, signal signals.OperationalSignal, 
 		attempt := next.AttemptCountByStation["test"]
 		policyResult := e.policy.Evaluate(payload.FailureClass, attempt)
 		next.AttemptCountByStation["test"] = attempt + 1
-		result.TimersToCancel = append(result.TimersToCancel, timerKey(signal.UnitID, TimerTestResultTimeout, "test"))
-		result.Decisions = append(result.Decisions, newDecision(next, DecisionCancelTimer, "test_result_recorded", TimerTestResultTimeout, signal.Source, now))
+		result.TimersToCancel = append(result.TimersToCancel,
+			timerKey(signal.UnitID, TimerTestResultTimeout, "test"),
+			timerKey(signal.UnitID, TimerHeartbeatTimeout, "test"),
+		)
+		result.Decisions = append(result.Decisions,
+			newDecision(next, DecisionCancelTimer, "test_result_recorded", TimerTestResultTimeout, signal.Source, now),
+			newDecision(next, DecisionCancelTimer, "test_result_recorded", TimerHeartbeatTimeout, signal.Source, now),
+		)
 		if policyResult.RetryAuthorized {
 			next.State = StateRetryPending
 			result.Decisions = append(result.Decisions,
@@ -160,10 +179,14 @@ func (e *Engine) ApplySignal(wf UnitWorkflow, signal signals.OperationalSignal, 
 		next.ActiveHoldReason = ""
 		result.Decisions = append(result.Decisions,
 			newDecision(next, DecisionCancelTimer, "test_result_recorded", TimerTestResultTimeout, signal.Source, now),
+			newDecision(next, DecisionCancelTimer, "test_result_recorded", TimerHeartbeatTimeout, signal.Source, now),
 			transitionDecision(next, StateReadyForInspection, now),
 			newDecision(next, DecisionCompleteIncident, "test_passed", "incident resolved", signal.Source, now),
 		)
-		result.TimersToCancel = append(result.TimersToCancel, timerKey(signal.UnitID, TimerTestResultTimeout, "test"))
+		result.TimersToCancel = append(result.TimersToCancel,
+			timerKey(signal.UnitID, TimerTestResultTimeout, "test"),
+			timerKey(signal.UnitID, TimerHeartbeatTimeout, "test"),
+		)
 		result.IncidentAction = IncidentAction{
 			Type: IncidentClose,
 		}
@@ -223,11 +246,16 @@ func (e *Engine) ApplySignal(wf UnitWorkflow, signal signals.OperationalSignal, 
 		result.Decisions = append(result.Decisions, transitionDecision(next, StateReadyForTest, now))
 
 	case signals.SignalInspectionCompleted:
-		if next.State != StateInInspection && next.State != StateReadyForInspection {
+		if next.State != StateInInspection {
 			return reject(wf, signal, now, "unexpected_signal_for_state"), nil
 		}
 		next.State = StateCompleted
-		result.Decisions = append(result.Decisions, transitionDecision(next, StateCompleted, now))
+		next.CurrentStationID = ""
+		result.Decisions = append(result.Decisions,
+			newDecision(next, DecisionCancelTimer, "inspection_completed", TimerHeartbeatTimeout, signal.Source, now),
+			transitionDecision(next, StateCompleted, now),
+		)
+		result.TimersToCancel = append(result.TimersToCancel, timerKey(signal.UnitID, TimerHeartbeatTimeout, signal.StationID))
 
 	default:
 		return reject(wf, signal, now, "unsupported_signal_type"), nil
@@ -279,6 +307,8 @@ func (e *Engine) ApplyTimer(wf UnitWorkflow, timer TimerPayload, now time.Time) 
 		next.State = StateOnHold
 		next.ActiveHoldReason = timer.TimerType
 		next.ActiveTimerKeys = removeTimer(next.ActiveTimerKeys, timer.Key)
+		next.LastDecisionAt = now
+		next.UpdatedAt = now
 		result.Decisions = append(result.Decisions,
 			newDecision(wf, DecisionPlaceHold, timer.TimerType, "timer fired", "timer", now),
 			newDecision(wf, DecisionEscalate, timer.TimerType, "manual investigation required", "timer", now),

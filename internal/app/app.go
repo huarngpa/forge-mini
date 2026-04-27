@@ -177,6 +177,7 @@ func (s *Service) commitTransition(ctx context.Context, unitID string, result wo
 		}
 	}
 
+	previousIncidentID := result.NextWorkflow.OpenIncidentID
 	incident, err := s.memory.GetOpenIncidentByUnit(ctx, unitID)
 	if err != nil {
 		return workflow.HandleResult{}, err
@@ -184,6 +185,9 @@ func (s *Service) commitTransition(ctx context.Context, unitID string, result wo
 	if incident != nil {
 		result.NextWorkflow.OpenIncidentID = incident.ID
 	} else {
+		if previousIncidentID != "" {
+			_ = s.memory.DeleteIncidentView(ctx, previousIncidentID)
+		}
 		result.NextWorkflow.OpenIncidentID = ""
 	}
 

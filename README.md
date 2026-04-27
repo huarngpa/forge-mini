@@ -67,6 +67,24 @@ Run the `repeated_failure_rework` scenario:
 curl -X POST "http://localhost:8080/api/demo/scenarios/repeated_failure_rework?unit_id=demo-unit-2"
 ```
 
+Run the happy path through inspection:
+
+```bash
+curl -X POST "http://localhost:8080/api/demo/scenarios/happy_path_unit?unit_id=demo-unit-3"
+```
+
+Run the heartbeat timeout hold scenario:
+
+```bash
+curl -X POST "http://localhost:8080/api/demo/scenarios/heartbeat_timeout_hold?unit_id=demo-unit-4"
+```
+
+Run the duplicate signal rejection scenario:
+
+```bash
+curl -X POST "http://localhost:8080/api/demo/scenarios/duplicate_signal_rejected?unit_id=demo-unit-5"
+```
+
 Inspect the workflow after a scenario:
 
 ```bash
