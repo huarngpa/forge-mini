@@ -81,7 +81,7 @@ func (s *Server) handleUnitRoutes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUnit(w http.ResponseWriter, r *http.Request, unitID string) {
-	wf, err := s.container.Memory.GetWorkflow(r.Context(), unitID)
+	wf, err := s.container.Runtime.GetWorkflow(r.Context(), unitID)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, store.ErrNotFound) {

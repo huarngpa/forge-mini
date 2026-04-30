@@ -44,7 +44,21 @@ Select the orchestration runtime with `FORGE_RUNTIME`.
 FORGE_RUNTIME=inprocess go run ./cmd/server
 ```
 
-`inprocess` is the current default. `temporal` is reserved for the upcoming Temporal-backed runtime.
+`inprocess` is the current default. To run the Temporal-backed runtime, start a local Temporal server first, then run:
+
+```bash
+FORGE_RUNTIME=temporal go run ./cmd/server
+```
+
+Optional Temporal settings:
+
+```bash
+TEMPORAL_HOST_PORT=localhost:7233
+TEMPORAL_NAMESPACE=default
+TEMPORAL_TASK_QUEUE=forge-mini
+```
+
+The Temporal runtime currently owns workflow state, signals, and durable timers. The richer dashboard and timeline projections are still backed by the in-process store.
 
 ## Run Tests
 

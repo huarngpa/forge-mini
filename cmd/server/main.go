@@ -13,6 +13,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer container.Close()
 	server := httpapi.NewServer(container)
 
 	log.Println("forge-mini listening on :8080")

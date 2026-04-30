@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -14,8 +13,10 @@ import (
 	"forge-mini/internal/signals"
 	"forge-mini/internal/sim"
 	"forge-mini/internal/store"
+	"forge-mini/internal/temporalruntime"
 	"forge-mini/internal/triage"
 	"forge-mini/internal/workflow"
+	"go.temporal.io/sdk/client"
 )
 
 type Container struct {
@@ -24,6 +25,8 @@ type Container struct {
 	Runtime orchestration.Runtime
 	Service *Service
 	Triage  *triage.Service
+	Worker  *temporalruntime.WorkerHandle
+	Client  client.Client
 }
 
 func New() *Container {
@@ -56,7 +59,31 @@ func NewWithRuntime(name orchestration.RuntimeName) (*Container, error) {
 	case orchestration.RuntimeInProcess:
 		runtime = svc
 	case orchestration.RuntimeTemporal:
-		return nil, errors.New("temporal runtime is not wired yet")
+		hostPort := envOrDefault("TEMPORAL_HOST_PORT", temporalruntime.DefaultHostPort)
+		namespace := envOrDefault("TEMPORAL_NAMESPACE", temporalruntime.DefaultNamespace)
+		taskQueue := envOrDefault("TEMPORAL_TASK_QUEUE", temporalruntime.DefaultTaskQueue)
+		temporalClient, err := client.Dial(client.Options{
+			HostPort:  hostPort,
+			Namespace: namespace,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("connect temporal: %w", err)
+		}
+		workerHandle, err := temporalruntime.StartWorker(temporalClient, taskQueue)
+		if err != nil {
+			temporalClient.Close()
+			return nil, fmt.Errorf("start temporal worker: %w", err)
+		}
+		runtime = temporalruntime.NewRuntime(temporalClient, taskQueue)
+		return &Container{
+			Memory:  mem,
+			Engine:  engine,
+			Runtime: runtime,
+			Service: svc,
+			Triage:  triageSvc,
+			Worker:  workerHandle,
+			Client:  temporalClient,
+		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported runtime %q", name)
 	}
@@ -67,6 +94,24 @@ func NewWithRuntime(name orchestration.RuntimeName) (*Container, error) {
 		Service: svc,
 		Triage:  triageSvc,
 	}, nil
+}
+
+func (c *Container) Close() {
+	if c == nil {
+		return
+	}
+	c.Worker.Stop()
+	if c.Client != nil {
+		c.Client.Close()
+	}
+}
+
+func envOrDefault(key, fallback string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	return value
 }
 
 type Service struct {
@@ -161,6 +206,10 @@ func (s *Service) RunScenario(ctx context.Context, name, unitID string) (orchest
 		Steps:         results,
 		FinalWorkflow: finalWorkflow,
 	}, nil
+}
+
+func (s *Service) GetWorkflow(ctx context.Context, unitID string) (workflow.UnitWorkflow, error) {
+	return s.memory.GetWorkflow(ctx, unitID)
 }
 
 func (s *Service) commitTransition(ctx context.Context, unitID string, result workflow.TransitionResult) (workflow.HandleResult, error) {

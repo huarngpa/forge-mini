@@ -17,10 +17,11 @@ func TestNewWithRuntimeInProcess(t *testing.T) {
 	}
 }
 
-func TestNewWithRuntimeTemporalIsReserved(t *testing.T) {
+func TestNewWithRuntimeTemporalRequiresServer(t *testing.T) {
+	t.Setenv("TEMPORAL_HOST_PORT", "127.0.0.1:1")
 	_, err := app.NewWithRuntime(orchestration.RuntimeTemporal)
 	if err == nil {
-		t.Fatal("expected temporal runtime to fail until it is wired")
+		t.Fatal("expected temporal runtime to require a reachable Temporal server")
 	}
 }
 

@@ -18,6 +18,7 @@ type Runtime interface {
 	HandleSignal(ctx context.Context, signal signals.OperationalSignal) (workflow.HandleResult, error)
 	HandleTimer(ctx context.Context, timer workflow.TimerPayload) (workflow.HandleResult, error)
 	RunScenario(ctx context.Context, name, unitID string) (ScenarioRunResult, error)
+	GetWorkflow(ctx context.Context, unitID string) (workflow.UnitWorkflow, error)
 }
 
 type ScenarioRunResult struct {
